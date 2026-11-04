@@ -1,0 +1,10 @@
+<!-- gcc.nexgentrend.com: footer ya Custom HTML ma paste karein. APP_URL badlein. -->
+<style>
+#ngt-bot-btn{position:fixed;bottom:20px;right:20px;z-index:99999;width:58px;height:58px;border-radius:50%;border:0;background:#111;color:#fff;font-size:26px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+#ngt-bot-box{display:none;position:fixed;bottom:90px;right:20px;z-index:99999;width:380px;max-width:calc(100vw - 24px);height:600px;max-height:75vh;border:0;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.35);overflow:hidden;background:#fff}
+</style>
+<button id="ngt-bot-btn" aria-label="Chat">🛒</button>
+<div id="ngt-bot-box"><iframe src="APP_URL/?embed=true" style="width:100%;height:100%;border:0" allow="camera"></iframe></div>
+<script>
+document.getElementById('ngt-bot-btn').onclick=function(){var b=document.getElementById('ngt-bot-box');b.style.display=b.style.display==='block'?'none':'block'};
+</script>
