@@ -192,6 +192,20 @@ WC_HEADERS = {
 }
 
 
+def _wc_get(params: dict):
+    """GET products. Tries /wp-json first, then ?rest_route= (works when permalinks are Plain)."""
+    last = None
+    for url in (
+        f"{STORE_URL}/wp-json/wc/v3/products",
+        f"{STORE_URL}/?rest_route=/wc/v3/products",
+    ):
+        r = requests.get(url, auth=(CK, CS), params=params, headers=WC_HEADERS, timeout=20)
+        if r.status_code != 404:
+            return r
+        last = r
+    return last
+
+
 def wc_diagnose() -> str:
     """One-shot connection test. Shown only when WC_DEBUG=1 (never prints secrets)."""
     lines = [
@@ -202,13 +216,8 @@ def wc_diagnose() -> str:
     if not CK or not CS:
         return "\n".join(lines + ["-> Keys missing in Secrets."])
     try:
-        r = requests.get(
-            f"{STORE_URL}/wp-json/wc/v3/products",
-            auth=(CK, CS),
-            params={"per_page": 5},
-            headers=WC_HEADERS,
-            timeout=20,
-        )
+        r = _wc_get({"per_page": 5})
+        lines.append(f"Final URL: {r.url.split('?')[0]}{'?rest_route=' if 'rest_route' in r.url else ''}")
         lines.append(f"HTTP status: {r.status_code}")
         lines.append(f"Response (first 400 chars): {r.text[:400]}")
     except Exception as e:
@@ -225,13 +234,7 @@ def fetch_products():
     auth = (CK, CS)
 
     try:
-        response = requests.get(
-            url,
-            auth=auth,
-            params={"per_page": 100, "status": "publish"},
-            headers=WC_HEADERS,
-            timeout=20,
-        )
+        response = _wc_get({"per_page": 100, "status": "publish"})
         response.raise_for_status()
         data = response.json()
     except Exception as e:
