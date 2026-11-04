@@ -186,6 +186,36 @@ def _to_langchain_message(message: dict[str, Any]) -> AnyMessage:
         return AIMessage(content=content)
     return HumanMessage(content=content)
 
+WC_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "application/json",
+}
+
+
+def wc_diagnose() -> str:
+    """One-shot connection test. Shown only when WC_DEBUG=1 (never prints secrets)."""
+    lines = [
+        f"STORE_URL = {STORE_URL}",
+        f"WC_CONSUMER_KEY set: {bool(CK)} (starts with ck_: {str(CK).startswith('ck_')})",
+        f"WC_CONSUMER_SECRET set: {bool(CS)} (starts with cs_: {str(CS).startswith('cs_')})",
+    ]
+    if not CK or not CS:
+        return "\n".join(lines + ["-> Keys missing in Secrets."])
+    try:
+        r = requests.get(
+            f"{STORE_URL}/wp-json/wc/v3/products",
+            auth=(CK, CS),
+            params={"per_page": 5},
+            headers=WC_HEADERS,
+            timeout=20,
+        )
+        lines.append(f"HTTP status: {r.status_code}")
+        lines.append(f"Response (first 400 chars): {r.text[:400]}")
+    except Exception as e:
+        lines.append(f"Request failed: {e!r}")
+    return "\n".join(lines)
+
+
 def fetch_products():
     """Fetch live products from WooCommerce REST API."""
     if not CK or not CS:
@@ -195,7 +225,13 @@ def fetch_products():
     auth = (CK, CS)
 
     try:
-        response = requests.get(url, auth=auth, timeout=20)
+        response = requests.get(
+            url,
+            auth=auth,
+            params={"per_page": 100, "status": "publish"},
+            headers=WC_HEADERS,
+            timeout=20,
+        )
         response.raise_for_status()
         data = response.json()
     except Exception as e:
@@ -692,6 +728,10 @@ def handle_query(user_message: str, is_photo_query: bool = False):
                 }}, '*');
                 </script>
             """, height=0)
+
+if os.getenv("WC_DEBUG") == "1":
+    with st.expander("Debug: WooCommerce connection"):
+        st.code(wc_diagnose())
 
 # --- Photo-based product search ---
 uploaded_photo = st.file_uploader(
