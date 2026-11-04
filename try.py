@@ -94,20 +94,17 @@ THEMES = {
     },
 }
 
-DEFAULT_THEME = "Warm Sand — Current"  # change to any key in THEMES for the GCC brand look
+DEFAULT_THEME = "Solid Dark — #121212"
 _theme_names = list(THEMES)
 
-# Theme picker is hidden for customers. Set secret SHOW_THEME_PICKER="1" to show it again.
-if os.getenv("SHOW_THEME_PICKER") == "1":
-    with st.popover("🎨", help="Change color theme"):
-        theme_option = st.radio(
-            "Color theme",
-            _theme_names,
-            index=_theme_names.index(DEFAULT_THEME) if DEFAULT_THEME in _theme_names else 0,
-            key="theme_option",
-        )
-else:
-    theme_option = DEFAULT_THEME if DEFAULT_THEME in THEMES else _theme_names[0]
+# A single small button (pinned to the top-left corner by the CSS below) that opens the theme list.
+with st.popover("🎨", help="Change color theme"):
+    theme_option = st.radio(
+        "Color theme",
+        _theme_names,
+        index=_theme_names.index(DEFAULT_THEME) if DEFAULT_THEME in _theme_names else 0,
+        key="theme_option",
+    )
 theme = THEMES[theme_option]
 
 
