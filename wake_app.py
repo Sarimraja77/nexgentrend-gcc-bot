@@ -1,7 +1,7 @@
-import os
+﻿import os
 from playwright.sync_api import sync_playwright
 
-URL = os.environ.get("STREAMLIT_APP_URL", "https://CHANGE-ME-gcc.streamlit.app")
+URL = os.environ.get("STREAMLIT_APP_URL", "https://gcc-nexgentrend-bot.streamlit.app")
 WAKE_TEXT = "Yes, get this app back up!"
 
 

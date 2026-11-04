@@ -1,10 +1,8 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import re
 import os
 import base64
 import html
-import uuid
 from io import BytesIO
 from typing import Any, TypedDict
 
@@ -29,8 +27,9 @@ except Exception:
 STORE_URL = os.getenv("WC_STORE_URL", "https://gcc.nexgentrend.com")
 CURRENCY = os.getenv("WC_CURRENCY", "AED")  # AED for UAE, SAR for KSA
 
-# The storefront keeps its own cart in the browser, so bot links go to the home page with
-# ?ngt_add=... and app.js adds the product (and opens the cart or checkout).
+# GCC store uses WooCommerce's native add-to-cart link (?add-to-cart=ID&quantity=N).
+# Optional: set WC_CART_PAGE_URL to the checkout/cart page, e.g. https://gcc.nexgentrend.com/?page_id=123
+CART_PAGE_URL = os.getenv("WC_CART_PAGE_URL", f"{STORE_URL}/")
 CART_MARKER_RE = re.compile(r"\[\[SYNC_CART:(\d+):(\d+):([a-f0-9]+)\]\]")
 
 
@@ -39,11 +38,9 @@ def strip_cart_marker(text: str) -> str:
 
 
 def cart_link(product_id, quantity: int = 1, token: str = "", checkout: bool = False) -> str:
-    """Link that adds a product to the storefront's own cart."""
-    url = f"{STORE_URL}/?ngt_add={product_id}&ngt_qty={quantity}"
-    if token:
-        url += f"&ngt_t={token}"
-    return url + ("#checkout" if checkout else "")
+    """WooCommerce native add-to-cart link (works with Plain permalinks)."""
+    sep = "&" if "?" in CART_PAGE_URL else "?"
+    return f"{CART_PAGE_URL}{sep}add-to-cart={product_id}&quantity={quantity}"
 
 CK = os.getenv("WC_CONSUMER_KEY")
 CS = os.getenv("WC_CONSUMER_SECRET")
@@ -97,17 +94,20 @@ THEMES = {
     },
 }
 
-DEFAULT_THEME = "Solid Dark — #121212"
+DEFAULT_THEME = "Warm Sand — Current"  # change to any key in THEMES for the GCC brand look
 _theme_names = list(THEMES)
 
-# A single small button (pinned to the top-left corner by the CSS below) that opens the theme list.
-with st.popover("🎨", help="Change color theme"):
-    theme_option = st.radio(
-        "Color theme",
-        _theme_names,
-        index=_theme_names.index(DEFAULT_THEME) if DEFAULT_THEME in _theme_names else 0,
-        key="theme_option",
-    )
+# Theme picker is hidden for customers. Set secret SHOW_THEME_PICKER="1" to show it again.
+if os.getenv("SHOW_THEME_PICKER") == "1":
+    with st.popover("🎨", help="Change color theme"):
+        theme_option = st.radio(
+            "Color theme",
+            _theme_names,
+            index=_theme_names.index(DEFAULT_THEME) if DEFAULT_THEME in _theme_names else 0,
+            key="theme_option",
+        )
+else:
+    theme_option = DEFAULT_THEME if DEFAULT_THEME in THEMES else _theme_names[0]
 theme = THEMES[theme_option]
 
 
@@ -230,9 +230,6 @@ def fetch_products():
     if not CK or not CS:
         return {}
 
-    url = f"{STORE_URL}/wp-json/wc/v3/products"
-    auth = (CK, CS)
-
     try:
         response = _wc_get({"per_page": 100, "status": "publish"})
         response.raise_for_status()
@@ -260,7 +257,8 @@ def fetch_products():
         stock = stock_qty if stock_qty is not None else (item.get("stock_status") or "In Stock")
 
         rating = item.get("average_rating", "N/A")
-        description = item.get("description", "")
+        description = re.sub(r"<[^>]+>", " ", item.get("description", "") or "")
+        description = " ".join(html.unescape(description).split())[:500]
         product_id = item.get("id")
 
         images = item.get("images", [])
@@ -274,6 +272,8 @@ def fetch_products():
             "description": description,
             "variant_id": product_id,
             "image_url": image_url,
+            "type": item.get("type"),
+            "permalink": item.get("permalink"),
         }
     return products
 
@@ -402,7 +402,7 @@ def get_product(name: str) -> str:
 
 @tool
 def list_products() -> str:
-    """List all available products with their prices, stock, rating and image URL."""
+    """List all available products with their prices, stock and rating."""
     products = get_products()
     if not products:
         return "No products are currently available or API credentials are missing."
@@ -411,7 +411,7 @@ def list_products() -> str:
     for name, info in products.items():
         lines.append(
             f"- **{name}**: {info['Price']} {info['Currency']} | Stock: {info['Stock']} | "
-            f"Rating: {info['Rating']} | Image: {info['image_url']}"
+            f"Rating: {info['Rating']}"
         )
     return "\n".join(lines)
 
@@ -446,12 +446,14 @@ def add_to_cart(product_name: str, quantity: int = 1) -> str:
     if not p.get("variant_id"):
         return "Sorry, this product cannot be added to cart right now."
 
-    product_id = p["variant_id"]
-    token = uuid.uuid4().hex[:12]  # one-time id so the same request is never added twice
-    checkout_url = cart_link(product_id, quantity, token, checkout=True)
+    if p.get("type") not in (None, "simple") and p.get("permalink"):
+        return (
+            f"{cleaned_name} has options (size, color, etc.). "
+            f"Please choose them on the product page: {p['permalink']}"
+        )
 
-    marker = f"[[SYNC_CART:{product_id}:{quantity}:{token}]]"
-    return f"Added {quantity} x {cleaned_name} to cart! Complete your order here: {checkout_url} {marker}"
+    link = cart_link(p["variant_id"], quantity)
+    return f"Tap this link to add {quantity} x {cleaned_name} to your cart: {link}"
 
 @st.cache_resource
 def get_agent():
@@ -465,7 +467,7 @@ def get_agent():
             "never invent availability, prices, ratings, or product matches. "
             "For a catalog request, call list_products. For a product question, call get_product "
             "with the best-matching name without asking for confirmation first. "
-            "For a purchase request, call add_to_cart and include its checkout link. "
+            "For a purchase request, call add_to_cart and include the link it returns. "
             "Keep replies concise and readable: use a plain list for one attribute, and a small "
             "Markdown table only when comparing multiple attributes across products. "
             "Do not add columns or details the user did not ask for."
@@ -604,6 +606,9 @@ st.markdown(f"""
         font-size: 0.95rem;
         opacity: 0.92;
     }}
+    [data-testid="stChatMessage"] p, [data-testid="stChatMessage"] li {{
+        unicode-bidi: plaintext; text-align: start;
+    }}
     @media (max-width: 640px) {{
         .block-container {{padding: 1rem 0.75rem 5rem;}}
         .welcome-box {{padding: 1.1rem;}}
@@ -642,7 +647,9 @@ def render_product_cards(product_names: list[str], products: dict[str, dict[str,
                 stock = info.get("Stock", "Availability unknown")
                 st.caption(f"Availability: {stock}  ·  Rating: {info.get('Rating', 'N/A')}")
                 product_id = info.get("variant_id")
-                if product_id:
+                if info.get("type") not in (None, "simple") and info.get("permalink"):
+                    st.link_button("Choose options", info["permalink"], use_container_width=True)
+                elif product_id:
                     st.link_button(
                         "Add to cart",
                         cart_link(product_id, 1),
@@ -713,24 +720,11 @@ def handle_query(user_message: str, is_photo_query: bool = False):
         {"role": "assistant", "content": reply, "products": mentioned_products}
     )
 
-    match = CART_MARKER_RE.search(reply)
     display_reply = strip_cart_marker(reply)
 
     with st.chat_message("assistant", avatar="🛒"):
         st.markdown(display_reply)
         render_product_cards(mentioned_products, products)
-        if match:
-            product_id, qty, token = match.group(1), match.group(2), match.group(3)
-            components.html(f"""
-                <script>
-                window.top.postMessage({{
-                    type: 'ADD_TO_WOOCOMMERCE_CART',
-                    productId: '{product_id}',
-                    quantity: {qty},
-                    token: '{token}'
-                }}, '*');
-                </script>
-            """, height=0)
 
 if os.getenv("WC_DEBUG") == "1":
     with st.expander("Debug: WooCommerce connection"):

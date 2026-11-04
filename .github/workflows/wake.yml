@@ -1,4 +1,4 @@
-name: Keep Streamlit app awake
+﻿name: Keep Streamlit app awake
 
 on:
   schedule:
@@ -18,4 +18,4 @@ jobs:
       - run: playwright install --with-deps chromium
       - run: python wake_app.py
         env:
-          STREAMLIT_APP_URL: https://CHANGE-ME-gcc.streamlit.app
+          STREAMLIT_APP_URL: https://gcc-nexgentrend-bot.streamlit.app
